@@ -1,0 +1,84 @@
+name: Tunehp xgboost
+inputs:
+- {name: train, type: CSV}
+- {name: test, type: CSV}
+outputs:
+- {name: n_estimators, type: Integer}
+- {name: learning_rate, type: Float}
+- {name: max_depth, type: Integer}
+- {name: booster, type: String}
+implementation:
+  container:
+    image: python:3.8
+    command:
+    - sh
+    - -c
+    - (PIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet --no-warn-script-location
+      'ray[tune]' 'pandas' 'scikit-learn' 'xgboost' || PIP_DISABLE_PIP_VERSION_CHECK=1
+      python3 -m pip install --quiet --no-warn-script-location 'ray[tune]' 'pandas'
+      'scikit-learn' 'xgboost' --user) && "$0" "$@"
+    - sh
+    - -ec
+    - |
+      program_path=$(mktemp)
+      printf "%s" "$0" > "$program_path"
+      python3 -u "$program_path" "$@"
+    - "def tunehp_xgboost(\n    train_path,\n    test_path,\n):\n\n    from ray import\
+      \ tune\n    import json\n    import pandas as pd\n    from xgboost import XGBClassifier\n\
+      \    from collections import namedtuple\n    from sklearn.metrics import accuracy_score,\
+      \ roc_auc_score\n\n    train_data = pd.read_csv(train_path)\n    X_train = train_data.drop([\"\
+      salary\"], axis=1)\n    y_train = train_data[\"salary\"]\n\n    test_data =\
+      \ pd.read_csv(test_path)\n    X_test = test_data.drop([\"salary\"], axis=1)\n\
+      \    y_test = test_data[\"salary\"]\n\n    def objective(config):\n\n      \
+      \  xgb_model = XGBClassifier(\n            random_state=42, \n            n_estimators\
+      \ =config['n_estimators'], \n            max_depth = int(config['max_depth']),\
+      \ \n            booster = config['booster'],\n            learning_rate = config[\"\
+      lr\"]\n\n        )\n\n        xgb_model.fit(X_train, y_train,\n            \
+      \    eval_set=[(X_test,y_test)], eval_metric=\"auc\",\n                early_stopping_rounds=5,verbose=False)\n\
+      \n        y_pred = xgb_model.predict(X_test)\n        roc_auc = roc_auc_score(y_test,y_pred)\n\
+      \        accuracy = accuracy_score(y_test,y_pred)\n\n        return {\"roc_auc\"\
+      :roc_auc,\"accuracy\":accuracy}\n\n    search_space = {\n        \"lr\": tune.grid_search([0.1,0.02,0.005,0.001]),\n\
+      \        \"n_estimators\": tune.grid_search([100,300,200]),\n        \"booster\"\
+      : tune.grid_search(['gbtree', 'gblinear',\"dart\"]),\n        \"max_depth\"\
+      \ : tune.grid_search([3,5,7,10])\n    }\n\n    tuner = tune.Tuner(\n       \
+      \ objective,\n        param_space=search_space,\n    )\n\n    results = tuner.fit()\n\
+      \    print(results.get_best_result(metric=\"roc_auc\",mode=\"max\").config)\n\
+      \    results_config = results.get_best_result(metric=\"roc_auc\",mode=\"max\"\
+      ).config\n\n    n_estimators = results_config['n_estimators']\n    max_depth\
+      \ = results_config['max_depth']\n    booster = results_config['booster']\n \
+      \   learning_rate = results_config[\"lr\"]\n\n    output = namedtuple('TuneOutputs',\
+      \ [\"n_estimators\",\"learning_rate\",'max_depth','booster'])\n    print(\"\
+      n_estimators :\",n_estimators)\n    print(\"max_depth :\",max_depth)\n    print(\"\
+      booster :\",booster)\n    print(\"learning_rate :\",learning_rate)\n\n    return\
+      \ output(n_estimators,learning_rate,max_depth,booster)\n\ndef _serialize_float(float_value:\
+      \ float) -> str:\n    if isinstance(float_value, str):\n        return float_value\n\
+      \    if not isinstance(float_value, (float, int)):\n        raise TypeError('Value\
+      \ \"{}\" has type \"{}\" instead of float.'.format(\n            str(float_value),\
+      \ str(type(float_value))))\n    return str(float_value)\n\ndef _serialize_int(int_value:\
+      \ int) -> str:\n    if isinstance(int_value, str):\n        return int_value\n\
+      \    if not isinstance(int_value, int):\n        raise TypeError('Value \"{}\"\
+      \ has type \"{}\" instead of int.'.format(\n            str(int_value), str(type(int_value))))\n\
+      \    return str(int_value)\n\ndef _serialize_str(str_value: str) -> str:\n \
+      \   if not isinstance(str_value, str):\n        raise TypeError('Value \"{}\"\
+      \ has type \"{}\" instead of str.'.format(\n            str(str_value), str(type(str_value))))\n\
+      \    return str_value\n\nimport argparse\n_parser = argparse.ArgumentParser(prog='Tunehp\
+      \ xgboost', description='')\n_parser.add_argument(\"--train\", dest=\"train_path\"\
+      , type=str, required=True, default=argparse.SUPPRESS)\n_parser.add_argument(\"\
+      --test\", dest=\"test_path\", type=str, required=True, default=argparse.SUPPRESS)\n\
+      _parser.add_argument(\"----output-paths\", dest=\"_output_paths\", type=str,\
+      \ nargs=4)\n_parsed_args = vars(_parser.parse_args())\n_output_files = _parsed_args.pop(\"\
+      _output_paths\", [])\n\n_outputs = tunehp_xgboost(**_parsed_args)\n\n_output_serializers\
+      \ = [\n    _serialize_int,\n    _serialize_float,\n    _serialize_int,\n   \
+      \ _serialize_str,\n\n]\n\nimport os\nfor idx, output_file in enumerate(_output_files):\n\
+      \    try:\n        os.makedirs(os.path.dirname(output_file))\n    except OSError:\n\
+      \        pass\n    with open(output_file, 'w') as f:\n        f.write(_output_serializers[idx](_outputs[idx]))\n"
+    args:
+    - --train
+    - {inputPath: train}
+    - --test
+    - {inputPath: test}
+    - '----output-paths'
+    - {outputPath: n_estimators}
+    - {outputPath: learning_rate}
+    - {outputPath: max_depth}
+    - {outputPath: booster}

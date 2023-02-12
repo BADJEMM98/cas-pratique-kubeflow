@@ -1,0 +1,118 @@
+name: Eval xgboost
+inputs:
+- {name: test, type: CSV}
+- {name: modelname, type: String}
+- {name: modelregistry, type: String}
+- {name: access_key_id, type: String}
+- {name: acces_key_secret, type: String}
+outputs:
+- {name: eval_accuracy, type: Float}
+- {name: eval_roc_auc_score, type: Float}
+implementation:
+  container:
+    image: python:3.8
+    command:
+    - sh
+    - -c
+    - (PIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet --no-warn-script-location
+      'boto3' 'pandas' 'scikit-learn' 'xgboost' || PIP_DISABLE_PIP_VERSION_CHECK=1
+      python3 -m pip install --quiet --no-warn-script-location 'boto3' 'pandas' 'scikit-learn'
+      'xgboost' --user) && "$0" "$@"
+    - sh
+    - -ec
+    - |
+      program_path=$(mktemp)
+      printf "%s" "$0" > "$program_path"
+      python3 -u "$program_path" "$@"
+    - |
+      def eval_xgboost(
+          test_path,
+          modelname,
+          modelregistry,
+          access_key_id,
+          acces_key_secret,
+      ):
+
+          import pandas as pd
+          import boto3
+          import tempfile
+          import joblib
+          from xgboost import XGBClassifier
+          from collections import namedtuple
+          from sklearn.metrics import accuracy_score, roc_auc_score
+
+          test_data = pd.read_csv(test_path)
+
+          X_test = test_data.drop(["salary"], axis=1)
+          y_test = test_data["salary"].to_list()
+
+          # s3_client = boto3.client('s3',aws_access_key_id=access_key_id,aws_secret_access_key=acces_key_secret)
+          # response = s3_client.get_object(Bucket=modelregistry, Key=modelname)
+
+          # model_file = response.get("Body")
+
+          with tempfile.TemporaryFile() as fp:
+              s3_client = boto3.client('s3',aws_access_key_id=access_key_id,aws_secret_access_key=acces_key_secret)
+              s3_client.download_fileobj(Fileobj=fp, Bucket=modelregistry, Key=modelname)
+              fp.seek(0)
+              xgb_model = joblib.load(fp)
+
+          # xgb_model = XGBClassifier()
+          # xgb_model.load_model(model_file)
+
+          y_pred = xgb_model.predict(X_test)
+          roc_auc = roc_auc_score(y_test,y_pred)
+          accuracy = accuracy_score(y_test,y_pred)
+
+          output = namedtuple("EvalOutputs",["eval_accuracy","eval_roc_auc_score"])
+          return output(accuracy, roc_auc)
+
+      def _serialize_float(float_value: float) -> str:
+          if isinstance(float_value, str):
+              return float_value
+          if not isinstance(float_value, (float, int)):
+              raise TypeError('Value "{}" has type "{}" instead of float.'.format(
+                  str(float_value), str(type(float_value))))
+          return str(float_value)
+
+      import argparse
+      _parser = argparse.ArgumentParser(prog='Eval xgboost', description='')
+      _parser.add_argument("--test", dest="test_path", type=str, required=True, default=argparse.SUPPRESS)
+      _parser.add_argument("--modelname", dest="modelname", type=str, required=True, default=argparse.SUPPRESS)
+      _parser.add_argument("--modelregistry", dest="modelregistry", type=str, required=True, default=argparse.SUPPRESS)
+      _parser.add_argument("--access-key-id", dest="access_key_id", type=str, required=True, default=argparse.SUPPRESS)
+      _parser.add_argument("--acces-key-secret", dest="acces_key_secret", type=str, required=True, default=argparse.SUPPRESS)
+      _parser.add_argument("----output-paths", dest="_output_paths", type=str, nargs=2)
+      _parsed_args = vars(_parser.parse_args())
+      _output_files = _parsed_args.pop("_output_paths", [])
+
+      _outputs = eval_xgboost(**_parsed_args)
+
+      _output_serializers = [
+          _serialize_float,
+          _serialize_float,
+
+      ]
+
+      import os
+      for idx, output_file in enumerate(_output_files):
+          try:
+              os.makedirs(os.path.dirname(output_file))
+          except OSError:
+              pass
+          with open(output_file, 'w') as f:
+              f.write(_output_serializers[idx](_outputs[idx]))
+    args:
+    - --test
+    - {inputPath: test}
+    - --modelname
+    - {inputValue: modelname}
+    - --modelregistry
+    - {inputValue: modelregistry}
+    - --access-key-id
+    - {inputValue: access_key_id}
+    - --acces-key-secret
+    - {inputValue: acces_key_secret}
+    - '----output-paths'
+    - {outputPath: eval_accuracy}
+    - {outputPath: eval_roc_auc_score}

@@ -12,6 +12,8 @@ def eval_xgboost(
     
     import pandas as pd
     import boto3
+    import tempfile
+    import joblib
     from xgboost import XGBClassifier
     from collections import namedtuple
     from sklearn.metrics import accuracy_score, roc_auc_score
@@ -20,14 +22,12 @@ def eval_xgboost(
     
     X_test = test_data.drop(["salary"], axis=1)
     y_test = test_data["salary"].to_list()
-
-    s3_client = boto3.client('s3',aws_access_key_id=access_key_id,aws_secret_access_key=acces_key_secret)
-    response = s3_client.get_object(Bucket=modelregistry, Key=modelname)
     
-    model_file = response.get("Body")
-
-    xgb_model = XGBClassifier()
-    xgb_model.load_model(model_file)
+    with tempfile.TemporaryFile() as fp:
+        s3_client = boto3.client('s3',aws_access_key_id=access_key_id,aws_secret_access_key=acces_key_secret)
+        s3_client.download_fileobj(Fileobj=fp, Bucket=modelregistry, Key=modelname)
+        fp.seek(0)
+        xgb_model = joblib.load(fp)
     
     y_pred = xgb_model.predict(X_test)
     roc_auc = roc_auc_score(y_test,y_pred)

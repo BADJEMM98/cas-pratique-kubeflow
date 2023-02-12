@@ -1,0 +1,49 @@
+name: Load data
+inputs:
+- {name: access_key_id, type: String}
+- {name: acces_key_secret, type: String}
+- {name: filename, type: String}
+outputs:
+- {name: data, type: CSV}
+implementation:
+  container:
+    image: python:3.8
+    command:
+    - sh
+    - -c
+    - (PIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet --no-warn-script-location
+      'boto3' 'pandas' || PIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet
+      --no-warn-script-location 'boto3' 'pandas' --user) && "$0" "$@"
+    - sh
+    - -ec
+    - |
+      program_path=$(mktemp)
+      printf "%s" "$0" > "$program_path"
+      python3 -u "$program_path" "$@"
+    - "def _make_parent_dirs_and_return_path(file_path: str):\n    import os\n   \
+      \ os.makedirs(os.path.dirname(file_path), exist_ok=True)\n    return file_path\n\
+      \ndef load_data(access_key_id,acces_key_secret,filename,data_path):\n    import\
+      \ boto3\n    import pandas as pd\n\n    bucket_name = \"fyc-bucket\"\n    s3_client\
+      \ = boto3.client('s3',aws_access_key_id=access_key_id,aws_secret_access_key=acces_key_secret)\n\
+      \    response = s3_client.get_object(Bucket=bucket_name, Key=filename)\n\n \
+      \   status_code = response.get('ResponseMetadata', {}).get('HTTPStatusCode')\n\
+      \n    if status_code == 200:\n        print(\"Donn\xE9es charg\xE9es avec succ\xE8\
+      s\")\n        data = pd.read_csv(response.get(\"Body\"))\n        data.to_csv(data_path,index=False)\n\
+      \        print(data)\n    else:\n        print(\"Echec du chargement des donn\xE9\
+      es\")\n\nimport argparse\n_parser = argparse.ArgumentParser(prog='Load data',\
+      \ description='')\n_parser.add_argument(\"--access-key-id\", dest=\"access_key_id\"\
+      , type=str, required=True, default=argparse.SUPPRESS)\n_parser.add_argument(\"\
+      --acces-key-secret\", dest=\"acces_key_secret\", type=str, required=True, default=argparse.SUPPRESS)\n\
+      _parser.add_argument(\"--filename\", dest=\"filename\", type=str, required=True,\
+      \ default=argparse.SUPPRESS)\n_parser.add_argument(\"--data\", dest=\"data_path\"\
+      , type=_make_parent_dirs_and_return_path, required=True, default=argparse.SUPPRESS)\n\
+      _parsed_args = vars(_parser.parse_args())\n\n_outputs = load_data(**_parsed_args)\n"
+    args:
+    - --access-key-id
+    - {inputValue: access_key_id}
+    - --acces-key-secret
+    - {inputValue: acces_key_secret}
+    - --filename
+    - {inputValue: filename}
+    - --data
+    - {outputPath: data}

@@ -1,0 +1,58 @@
+name: Preprocess data
+inputs:
+- {name: data, type: CSV}
+outputs:
+- {name: train, type: CSV}
+- {name: test, type: CSV}
+implementation:
+  container:
+    image: python:3.8
+    command:
+    - sh
+    - -c
+    - (PIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet --no-warn-script-location
+      'pandas' 'scikit-learn' || PIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install
+      --quiet --no-warn-script-location 'pandas' 'scikit-learn' --user) && "$0" "$@"
+    - sh
+    - -ec
+    - |
+      program_path=$(mktemp)
+      printf "%s" "$0" > "$program_path"
+      python3 -u "$program_path" "$@"
+    - "def _make_parent_dirs_and_return_path(file_path: str):\n    import os\n   \
+      \ os.makedirs(os.path.dirname(file_path), exist_ok=True)\n    return file_path\n\
+      \ndef preprocess_data(data_path,train_path,test_path):\n    import pandas as\
+      \ pd\n    import pandas as pd\n    from sklearn.model_selection import train_test_split\n\
+      \n    data = pd.read_csv(data_path)\n\n    # Suppression des colonnes avec un\
+      \ fort d\xE9s\xE9quilibre et avec une valeur unique\n    data.columns = data.columns.str.replace('\
+      \ ', '')\n    data.drop(columns=[\"race\",\"native-country\",\"capital-gain\"\
+      ,\"capital-loss\"],inplace=True)\n\n    #Suppression des lignes dupliqu\xE9\
+      es\n    data.drop_duplicates(inplace=True)\n\n    # CATEGORICAL/ONE-HOT ENCODING\n\
+      \    data[\"salary\"] = data[\"salary\"].apply(lambda x:x.strip())\n    data[\"\
+      salary\"] = data[\"salary\"].replace([\"<=50K\", \">50K\"],[0,1])\n\n    data[\"\
+      sex\"] = data[\"sex\"].apply(lambda x:x.strip())\n    data[\"sex\"].replace([\"\
+      Male\",\"Female\"],[0,1])\n\n    data[\"workclass\"].replace({\"?\":\"Private\"\
+      })\n    data[\"workclass\"] = data[\"workclass\"].astype('category')\n    data[\"\
+      workclass\"] = data[\"workclass\"].cat.codes\n\n    data[\"education\"] = data[\"\
+      education\"].astype('category')\n    data[\"education\"] = data[\"education\"\
+      ].cat.codes\n\n    data[\"occupation\"].replace({\"?\":\"Prof-specialty\"})\n\
+      \    data[\"occupation\"] = data[\"occupation\"].astype('category')\n    data[\"\
+      occupation\"] = data[\"occupation\"].cat.codes\n\n    data[\"sex\"] = data[\"\
+      sex\"].replace([\"Male\",\"Female\"],[0,1])\n\n    data = pd.get_dummies(\n\
+      \        data=data,\n        columns=[\"relationship\",\"marital-status\"],\n\
+      \        prefix=[\"rel\",\"mar_s\"]\n        )\n    train, test = train_test_split(data,\
+      \ test_size=0.2, random_state=42)\n    train.to_csv(train_path,index=False)\n\
+      \    test.to_csv(test_path,index=False)\n\nimport argparse\n_parser = argparse.ArgumentParser(prog='Preprocess\
+      \ data', description='')\n_parser.add_argument(\"--data\", dest=\"data_path\"\
+      , type=str, required=True, default=argparse.SUPPRESS)\n_parser.add_argument(\"\
+      --train\", dest=\"train_path\", type=_make_parent_dirs_and_return_path, required=True,\
+      \ default=argparse.SUPPRESS)\n_parser.add_argument(\"--test\", dest=\"test_path\"\
+      , type=_make_parent_dirs_and_return_path, required=True, default=argparse.SUPPRESS)\n\
+      _parsed_args = vars(_parser.parse_args())\n\n_outputs = preprocess_data(**_parsed_args)\n"
+    args:
+    - --data
+    - {inputPath: data}
+    - --train
+    - {outputPath: train}
+    - --test
+    - {outputPath: test}

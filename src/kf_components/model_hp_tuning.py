@@ -1,10 +1,10 @@
 from kfp.components import create_component_from_func,OutputPath,InputPath
+from typing import NamedTuple, Dict
 
 def tunehp_xgboost(
     train_path:InputPath('CSV'),
     test_path:InputPath('CSV'),
-    bestconfigs_path:OutputPath('json')
-):
+)-> NamedTuple('TuneOutputs',[("n_estimators", int),("learning_rate", float),('max_depth', int),('booster',str)]):
     
     from ray import tune
     import json
@@ -28,7 +28,6 @@ def tunehp_xgboost(
             random_state=42, 
             n_estimators =config['n_estimators'], 
             max_depth = int(config['max_depth']), 
-            gamma = config['gamma'],
             booster = config['booster'],
             learning_rate = config["lr"]
             
@@ -48,7 +47,6 @@ def tunehp_xgboost(
     search_space = {
         "lr": tune.grid_search([0.1,0.02,0.005,0.001]),
         "n_estimators": tune.grid_search([100,300,200]),
-        "gamma": tune.uniform(1,9),
         "booster": tune.grid_search(['gbtree', 'gblinear',"dart"]),
         "max_depth" : tune.grid_search([3,5,7,10])
     }
@@ -60,10 +58,20 @@ def tunehp_xgboost(
     
     results = tuner.fit()
     print(results.get_best_result(metric="roc_auc",mode="max").config)
-    results_config = results.get_best_result(metric="roc_auc",mode="max")
+    results_config = results.get_best_result(metric="roc_auc",mode="max").config
     
-    with open(bestconfigs_path, 'w') as fp:
-        json.dump(results_config.metrics,fp)
+    n_estimators = results_config['n_estimators']
+    max_depth = results_config['max_depth']
+    booster = results_config['booster']
+    learning_rate = results_config["lr"]
+    
+    output = namedtuple('TuneOutputs', ["n_estimators","learning_rate",'max_depth','booster'])
+    print("n_estimators :",n_estimators)
+    print("max_depth :",max_depth)
+    print("booster :",booster)
+    print("learning_rate :",learning_rate)
+    
+    return output(n_estimators,learning_rate,max_depth,booster)
     
 if __name__ == "__main__":
 

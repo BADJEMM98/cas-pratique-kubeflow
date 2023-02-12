@@ -128,3 +128,9 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+/src/kf_components/deploy.ipynb
+/src/kf_components/sa.yaml
+/src/kf_components/xgboost_model.yaml
+/src/kf_components/test.ipynb
+/src/kf_components/test.csv

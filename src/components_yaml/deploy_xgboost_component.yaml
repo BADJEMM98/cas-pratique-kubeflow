@@ -1,0 +1,94 @@
+name: Deploy xgboost
+inputs:
+- {name: modelname, type: String}
+- {name: access_key_id, type: String}
+- {name: acces_key_secret, type: String}
+outputs:
+- {name: modelurl, type: String}
+implementation:
+  container:
+    image: python:3.8
+    command:
+    - sh
+    - -c
+    - (PIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet --no-warn-script-location
+      'boto3' 'requests' || PIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install
+      --quiet --no-warn-script-location 'boto3' 'requests' --user) && "$0" "$@"
+    - sh
+    - -ec
+    - |
+      program_path=$(mktemp)
+      printf "%s" "$0" > "$program_path"
+      python3 -u "$program_path" "$@"
+    - |
+      def deploy_xgboost(
+          modelname,
+          access_key_id,
+          acces_key_secret
+      ):
+          import boto3
+          import os
+          import requests
+          from collections import namedtuple
+
+          s3_client = boto3.client('s3',aws_access_key_id=access_key_id,aws_secret_access_key=acces_key_secret)
+          object_name = os.path.basename(modelname)
+          source_url = f"https://s3.amazonaws.com/{modelname}"
+          destination_bucket = 'fycmodelsprod'
+          destination_object = object_name
+
+          response = requests.get(source_url)
+
+          # upload the object to the destination bucket
+          response = s3_client.put_object(Bucket=destination_bucket, Key=destination_object, Body=response.content)
+
+          new_url = ""
+          print(f"Object from URL {source_url} has been successfully uploaded to {destination_object} in bucket {destination_bucket}.")
+          if response['ResponseMetadata']['HTTPStatusCode'] == 200:
+              print(f"Object {destination_object} has been successfully uploaded to bucket {destination_bucket}.")
+              new_url = f"https://s3.amazonaws.com/{destination_bucket}/{object_name}"
+          else:
+              print(f"Failed to upload object {destination_object} to bucket {destination_bucket}. Error code: {response['ResponseMetadata']['HTTPStatusCode']}.")
+          output = namedtuple("UploadOutputs",["modelurl"])
+
+          return output(new_url)
+
+      def _serialize_str(str_value: str) -> str:
+          if not isinstance(str_value, str):
+              raise TypeError('Value "{}" has type "{}" instead of str.'.format(
+                  str(str_value), str(type(str_value))))
+          return str_value
+
+      import argparse
+      _parser = argparse.ArgumentParser(prog='Deploy xgboost', description='')
+      _parser.add_argument("--modelname", dest="modelname", type=str, required=True, default=argparse.SUPPRESS)
+      _parser.add_argument("--access-key-id", dest="access_key_id", type=str, required=True, default=argparse.SUPPRESS)
+      _parser.add_argument("--acces-key-secret", dest="acces_key_secret", type=str, required=True, default=argparse.SUPPRESS)
+      _parser.add_argument("----output-paths", dest="_output_paths", type=str, nargs=1)
+      _parsed_args = vars(_parser.parse_args())
+      _output_files = _parsed_args.pop("_output_paths", [])
+
+      _outputs = deploy_xgboost(**_parsed_args)
+
+      _output_serializers = [
+          _serialize_str,
+
+      ]
+
+      import os
+      for idx, output_file in enumerate(_output_files):
+          try:
+              os.makedirs(os.path.dirname(output_file))
+          except OSError:
+              pass
+          with open(output_file, 'w') as f:
+              f.write(_output_serializers[idx](_outputs[idx]))
+    args:
+    - --modelname
+    - {inputValue: modelname}
+    - --access-key-id
+    - {inputValue: access_key_id}
+    - --acces-key-secret
+    - {inputValue: acces_key_secret}
+    - '----output-paths'
+    - {outputPath: modelurl}

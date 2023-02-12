@@ -13,7 +13,7 @@ def deploy_xgboost(
     
     s3_client = boto3.client('s3',aws_access_key_id=access_key_id,aws_secret_access_key=acces_key_secret)
     object_name = os.path.basename(modelname)
-    source_url = modelname
+    source_url = f"https://s3.amazonaws.com/{modelname}"
     destination_bucket = 'fycmodelsprod'
     destination_object = object_name
 
@@ -39,5 +39,5 @@ if __name__ == "__main__":
     deploy_xgboost_op = create_component_from_func(
         deploy_xgboost, output_component_file="../components_yaml/deploy_xgboost_component.yaml",    
         base_image= "python:3.8",
-        packages_to_install = ["boto3"]
+        packages_to_install = ["boto3","requests"]
     )
